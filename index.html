@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src https: http:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <title>TraceIDE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand">TraceIDE</div>
+      <nav class="topnav">
+        <a href="#" class="js-nav active" data-screen="input">Trace Analysis</a>
+        <a href="#" class="js-nav" data-screen="docs">Documentation</a>
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button id="themeBtn" type="button" class="ghost compact">Tema: Dark</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidenav">
+      <div class="project-box">
+        <div class="project-dot"></div>
+        <div>
+          <div class="project-name">Project Alpha</div>
+          <div class="project-version">v1.0.4-stable</div>
+        </div>
+      </div>
+      <nav class="side-links">
+        <a class="js-nav active" data-screen="input" href="#">Input</a>
+        <a class="js-nav" data-screen="requester" href="#">Requester</a>
+        <a class="js-nav" data-screen="formatters" href="#">Formatters</a>
+        <a class="js-nav" data-screen="explorer" href="#">Explorer</a>
+        <a class="js-nav" data-screen="history" href="#">History</a>
+      </nav>
+      <div class="side-footer">
+        <a class="js-nav" data-screen="docs" href="#">Docs</a>
+        <a href="#">Logout</a>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <section id="screen-input" class="screen active">
+        <section class="workspace-context">
+          <div class="crumbs">Workspace / New Trace</div>
+          <div class="actions">
+            <button id="sampleBtn" type="button" class="ghost compact">Carregar Exemplo</button>
+          </div>
+        </section>
+
+        <section class="input-shell">
+          <article class="editor-v2">
+            <div class="editor-top">
+              <div class="editor-top-left">
+                <div class="traffic">
+                  <span class="dot red"></span>
+                  <span class="dot yellow"></span>
+                  <span class="dot green"></span>
+                </div>
+                <span class="chip muted">stacktrace.log</span>
+              </div>
+              <div class="editor-top-right">
+                <select id="languageModeSelect">
+                  <option value="auto">Auto-detect</option>
+                  <option value="Node/JS">Node/JS</option>
+                  <option value="Python">Python</option>
+                  <option value="Java">Java</option>
+                  <option value=".NET">.NET</option>
+                </select>
+              </div>
+            </div>
+            <div class="editor-canvas">
+              <div class="line-gutter" aria-hidden="true">
+                <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+                <span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
+              </div>
+              <textarea id="traceInput" placeholder="Cole aqui o stack trace completo..."></textarea>
+            </div>
+            <div class="editor-actions-row">
+              <div class="actions">
+                <button id="clearBtn" type="button" class="ghost compact">Clear</button>
+              </div>
+              <div class="actions">
+                <button id="onlyAppBtn" type="button" class="ghost compact">So app</button>
+                <button id="analyzeBtn" type="button">Deconstruct</button>
+              </div>
+            </div>
+          </article>
+
+          <aside class="assistant-rail">
+            <section class="panel">
+              <h3>Pro Tips</h3>
+              <ul>
+                <li>Cole a stack completa, incluindo linhas anteriores ao erro.</li>
+                <li>Inclua <code>Caused by</code>/<code>InnerException</code> para rastrear origem.</li>
+                <li>Use `So app` para reduzir ruido de libs.</li>
+              </ul>
+            </section>
+            <section class="panel">
+              <h3>Config</h3>
+              <label for="ideSelect">IDE preferida</label>
+              <select id="ideSelect">
+                <option value="vscode">VS Code</option>
+                <option value="rider">JetBrains Rider</option>
+                <option value="visualstudio">Visual Studio</option>
+                <option value="idea">IntelliJ IDEA</option>
+                <option value="vscodium">VSCodium</option>
+              </select>
+            </section>
+            <section class="panel">
+              <h3>Acoes</h3>
+              <div class="rail-actions">
+                <button id="exportBtn" type="button" class="secondary">Exportar Markdown</button>
+                <button id="ticketBtn" type="button" class="secondary">Gerar Ticket</button>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section class="results">
+          <article class="panel full">
+            <h2>Resumo</h2>
+            <div id="summary" class="content empty">Cole um stack trace para comecar.</div>
+          </article>
+          <article class="panel full">
+            <h2>Ordem para debug</h2>
+            <div id="orderedFrames" class="content empty">Sem dados.</div>
+          </article>
+          <article class="panel full">
+            <h2>Stack trace normalizado</h2>
+            <pre id="normalized" class="content empty">Sem dados.</pre>
+          </article>
+        </section>
+      </section>
+
+      <section id="screen-formatters" class="screen">
+        <section class="workspace-header">
+          <div>
+            <h1>Formatters</h1>
+            <p>Formate, valide e minifique JSON/XML rapidamente.</p>
+          </div>
+        </section>
+        <section class="formatter-grid">
+          <article class="panel formatter-card">
+            <h2>JSON Formatter</h2>
+            <label for="jsonInput">Input</label>
+            <textarea id="jsonInput" class="small-area tall" placeholder='{"a":1,"b":{"c":2}}'></textarea>
+            <div class="card-actions">
+              <button id="jsonFormatBtn" type="button" class="secondary">Formatar</button>
+              <button id="jsonMinifyBtn" type="button" class="ghost">Minificar</button>
+              <button id="jsonValidateBtn" type="button" class="ghost">Validar</button>
+              <button id="jsonCopyBtn" type="button" class="ghost">Copiar</button>
+            </div>
+            <label for="jsonOutput">Output</label>
+            <pre id="jsonOutput" class="content response-box formatter-output">-</pre>
+          </article>
+          <article class="panel formatter-card">
+            <h2>XML Formatter</h2>
+            <label for="xmlInput">Input</label>
+            <textarea id="xmlInput" class="small-area tall" placeholder="<root><item id='1'>ok</item></root>"></textarea>
+            <div class="card-actions">
+              <button id="xmlFormatBtn" type="button" class="secondary">Formatar</button>
+              <button id="xmlMinifyBtn" type="button" class="ghost">Minificar</button>
+              <button id="xmlValidateBtn" type="button" class="ghost">Validar</button>
+              <button id="xmlCopyBtn" type="button" class="ghost">Copiar</button>
+            </div>
+            <label for="xmlOutput">Output</label>
+            <pre id="xmlOutput" class="content response-box formatter-output">-</pre>
+          </article>
+        </section>
+      </section>
+
+      <section id="screen-requester" class="screen">
+        <section class="workspace-header">
+          <div>
+            <h1>Requester</h1>
+            <p>Execucao de requests HTTP para validar rotas e reproduzir falhas rapidamente.</p>
+          </div>
+        </section>
+        <section class="request-grid">
+          <article class="panel requester-panel">
+            <h2>Request Builder</h2>
+            <div class="request-row request-main">
+              <select id="reqMethod">
+                <option>GET</option>
+                <option>POST</option>
+                <option>PUT</option>
+                <option>PATCH</option>
+                <option>DELETE</option>
+              </select>
+              <input id="reqUrl" type="text" placeholder="https://api.exemplo.com/rota">
+              <button id="sendReqBtn" type="button">Enviar</button>
+            </div>
+            <div class="tabbar">
+              <button type="button" class="tab-btn active" data-req-tab="headers">Headers</button>
+              <button type="button" class="tab-btn" data-req-tab="body">Body</button>
+            </div>
+
+            <div class="tab-panel active" id="req-tab-headers">
+              <label for="reqHeaders">Headers (um por linha, formato Key: Value)</label>
+              <textarea id="reqHeaders" class="small-area tall" placeholder="Authorization: Bearer ...&#10;Content-Type: application/json"></textarea>
+            </div>
+
+            <div class="tab-panel" id="req-tab-body">
+              <label for="reqBody">Body</label>
+              <textarea id="reqBody" class="small-area tall" placeholder='{"id":123}'></textarea>
+            </div>
+          </article>
+
+          <article class="panel requester-panel">
+            <h2>Response</h2>
+            <div id="reqMeta" class="content empty req-meta">Sem request executada.</div>
+
+            <div class="tabbar">
+              <button type="button" class="tab-btn active" data-res-tab="body">Body</button>
+              <button type="button" class="tab-btn" data-res-tab="headers">Headers</button>
+            </div>
+
+            <div class="tab-panel active" id="res-tab-body">
+              <pre id="reqResponseBody" class="content empty response-box">-</pre>
+            </div>
+            <div class="tab-panel" id="res-tab-headers">
+              <pre id="reqResponseHeaders" class="content empty response-box">-</pre>
+            </div>
+          </article>
+        </section>
+      </section>
+
+      <section id="screen-explorer" class="screen">
+        <section class="workspace-header">
+          <div>
+            <h1>Explorer</h1>
+            <p>Busque frames por arquivo/caminho/funcao e copie rapidamente referencias para debug.</p>
+          </div>
+          <div class="actions">
+            <input id="explorerSearch" type="text" placeholder="Buscar frame...">
+          </div>
+        </section>
+        <section class="results">
+          <article class="panel full">
+            <h2>Frames Indexados</h2>
+            <div id="explorerFrames" class="content empty">Sem dados. Execute uma analise.</div>
+          </article>
+        </section>
+      </section>
+
+      <section id="screen-history" class="screen">
+        <section class="workspace-header">
+          <div>
+            <h1>History</h1>
+            <p>Historico local das ultimas analises para reuso rapido.</p>
+          </div>
+          <div class="actions">
+            <button id="clearHistoryBtn" type="button" class="ghost">Limpar Historico</button>
+          </div>
+        </section>
+        <section class="results">
+          <article class="panel full">
+            <h2>Ultimas Analises</h2>
+            <div id="historyList" class="content empty">Sem historico.</div>
+          </article>
+        </section>
+      </section>
+
+      <section id="screen-docs" class="screen">
+        <section class="workspace-header">
+          <div>
+            <h1>Documentation</h1>
+            <p>Fluxo recomendado de uso do TraceIDE.</p>
+          </div>
+        </section>
+        <section class="results">
+          <article class="panel full">
+            <h2>Guia Rapido</h2>
+            <ul class="docs-list">
+              <li>Cole a stack completa com <code>Caused by</code>/<code>InnerException</code>.</li>
+              <li>Ajuste prefixos do app para melhorar classificacao app/lib.</li>
+              <li>Comece pelo frame <strong>1*</strong> na ordem de debug.</li>
+              <li>Use Explorer para encontrar funcoes/arquivos rapidamente.</li>
+              <li>Exporte Markdown para abrir ticket com contexto tecnico.</li>
+            </ul>
+          </article>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
