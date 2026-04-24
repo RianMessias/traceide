@@ -1,3 +1,4 @@
+// DOM ELEMENTS
 const traceInput = document.getElementById("traceInput");
 const analyzeBtn = document.getElementById("analyzeBtn");
 const sampleBtn = document.getElementById("sampleBtn");
@@ -8,8 +9,10 @@ const languageModeSelect = document.getElementById("languageModeSelect");
 const ideSelect = document.getElementById("ideSelect");
 const onlyAppBtn = document.getElementById("onlyAppBtn");
 const summaryEl = document.getElementById("summary");
+const timelineEl = document.getElementById("timeline");
 const orderedFramesEl = document.getElementById("orderedFrames");
 const normalizedEl = document.getElementById("normalized");
+const notificationContainer = document.getElementById("notification-container");
 const navLinks = Array.from(document.querySelectorAll(".js-nav"));
 const screens = Array.from(document.querySelectorAll(".screen"));
 const explorerSearchInput = document.getElementById("explorerSearch");
@@ -38,14 +41,69 @@ const reqResponseHeadersEl = document.getElementById("reqResponseHeaders");
 const reqResponseBodyEl = document.getElementById("reqResponseBody");
 const reqTabBtns = Array.from(document.querySelectorAll("[data-req-tab]"));
 const resTabBtns = Array.from(document.querySelectorAll("[data-res-tab]"));
+const themeBtn = document.getElementById("themeBtn");
 
+// STATE
 let lastAnalysis = null;
 let currentScreen = "input";
 let onlyAppState = false;
+let collapsedFrames = new Set();
+let clickedFrame = null;
+// CONSTANTS
 const HISTORY_KEY = "traceHistoryV1";
 const REQUEST_TIMEOUT_MS = 30000;
 const MAX_RESPONSE_CHARS = 300000;
+const MAX_URL_CHARS = 4096;
+const MAX_HEADER_LINES = 64;
+const MAX_HEADER_KEY_CHARS = 256;
+const MAX_HEADER_VALUE_CHARS = 8192;
+const MAX_BODY_CHARS = 200000;
+const SAFE_NOTIFICATION_TYPES = new Set(["success", "error", "info", "warning"]);
 
+// Toast icons
+const icons = {
+  success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#27c93f" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>`,
+  error: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>`,
+  info: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`,
+  warning: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="#ffbd2e" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h18.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>`
+};
+
+function showNotification(message, type = "info", duration = 4000) {
+  if (!notificationContainer) {
+    console.log("notification:", message);
+    return;
+  }
+  const safeType = SAFE_NOTIFICATION_TYPES.has(type) ? type : "info";
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${safeType}`;
+  const iconWrap = document.createElement("span");
+  iconWrap.className = "toast-icon-wrap";
+  iconWrap.innerHTML = icons[safeType] || icons.info;
+
+  const content = document.createElement("span");
+  content.className = "toast-content";
+  content.textContent = String(message || "");
+
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "toast-close";
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Fechar");
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", () => toast.remove());
+
+  toast.appendChild(iconWrap);
+  toast.appendChild(content);
+  toast.appendChild(closeBtn);
+  notificationContainer.appendChild(toast);
+  if (duration > 0) setTimeout(() => toast.remove(), duration);
+}
+
+function dismissNotification(id) {
+  const toast = document.getElementById(id);
+  if (toast) toast.remove();
+}
+
+// LIB MARKERS
 const libMarkers = [
   "node_modules",
   "internal/",
@@ -58,6 +116,7 @@ const libMarkers = [
   "microsoft."
 ];
 
+// CONFIG
 const categoryRules = [
   {
     id: "null_ref",
@@ -119,6 +178,7 @@ function getAppPrefixes() {
   return [];
 }
 
+// PARSERS
 function parseErrorHeader(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
@@ -246,6 +306,10 @@ function inferSourceType(path, appPrefixes) {
   if (!value) return "lib";
   if (isLikelyLibraryPath(value)) return "lib";
   return "app";
+}
+
+function normalizeSourceType(value) {
+  return value === "app" ? "app" : "lib";
 }
 
 function inferRootCauseFrame(frames) {
@@ -496,7 +560,7 @@ function renderOrderedFrames(result) {
     const line = frame.line ? String(frame.line) : "-";
     const path = frame.path || frame.raw || "-";
     const fn = frame.fn || "-";
-    const source = frame.sourceType || "-";
+    const source = normalizeSourceType(frame.sourceType);
     const isRoot = result.rootFrame && frame.index === result.rootFrame.index;
 
     return `
@@ -650,7 +714,7 @@ function renderExplorer(result, searchTerm = "") {
           <div class="explorer-head">
             <span class="order">${idx + 1}</span>
             <strong>${escapeHtml(frame.fileName || "-")}</strong>
-            <span class="tag tag-${escapeHtml(frame.sourceType || "lib")}">${escapeHtml(frame.sourceType || "lib")}</span>
+            <span class="tag tag-${normalizeSourceType(frame.sourceType)}">${escapeHtml(normalizeSourceType(frame.sourceType))}</span>
           </div>
           <div class="history-line"><span>Caminho:</span> ${escapeHtml(frame.path || "-")}</div>
           <div class="history-line"><span>Linha:</span> ${escapeHtml(String(frame.line || "-"))}</div>
@@ -665,6 +729,29 @@ function renderExplorer(result, searchTerm = "") {
     </div>
   `;
   explorerFramesEl.className = "content";
+}
+
+// RENDERERS
+function renderTimeline(result) {
+  if (!timelineEl) return;
+  if (!result.frames || !result.frames.length) {
+    timelineEl.innerHTML = '<div class="empty">Nenhum frame para timeline.</div>';
+    timelineEl.className = "content empty";
+    return;
+  }
+  const events = result.frames.slice(0, 15).map((frame, i) => {
+    const line = frame.line || "-";
+    const file = frame.fileName || frame.raw || "unknown";
+    const isRoot = result.rootFrame && frame.index === result.rootFrame.index;
+    return `<div class="timeline-item${isRoot ? " root" : ""}">
+      <span class="timeline-order">${i + 1}${isRoot ? "*" : ""}</span>
+      <span class="timeline-file">${escapeHtml(file)}</span>
+      <span class="timeline-line">:${escapeHtml(String(line))}</span>
+    </div>`;
+  }).join("");
+  timelineEl.innerHTML = `<div class="timeline-list">${events}</div>
+    <div class="hint">* = causa raiz provavel</div>`;
+  timelineEl.className = "content";
 }
 
 function renderSummary(result) {
@@ -735,6 +822,7 @@ function renderSummary(result) {
   summaryEl.className = "content";
 }
 
+// UTILITIES
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -760,22 +848,16 @@ function copyToClipboard(text) {
 
 function openInIDE(path, line) {
   if (!path) return;
+  showNotification(`Abrindo ${path}:${line}...`, "info", 2000);
   const normalized = String(path).replace(/\\/g, "/");
   const safePath = encodeURI(normalized);
   const parsedLine = Number(line);
   const lineNum = Number.isFinite(parsedLine) && parsedLine > 0 ? String(Math.floor(parsedLine)) : "1";
-  const ide = localStorage.getItem("traceIDE") || "vscode";
-
-  const ideUrls = {
-    vscode: `vscode://file/${safePath}:${lineNum}`,
-    rider: `jetbrains://rider/open?file=${encodeURIComponent(normalized)}&line=${lineNum}`,
-    visualstudio: `vs://file?${encodeURIComponent(normalized)}#${lineNum}`,
-    idea: `jetbrains://idea/open?file=${encodeURIComponent(normalized)}&line=${lineNum}`,
-    vscodium: `vscodium://file/${safePath}:${lineNum}`
-  };
-
-  const url = ideUrls[ide] || ideUrls.vscode;
+  const fullPath = `${normalized}:${lineNum}`;
+  copyToClipboard(fullPath);
+  const url = `vscode://file/${safePath}:${lineNum}`;
   window.open(url, "_blank", "noopener,noreferrer");
+  showNotification(`Copiado: ${fullPath} — Cole no terminal: code ${fullPath}`, "success", 6000);
 }
 
 function normalizePathForCopy(path) {
@@ -904,22 +986,63 @@ function downloadTextFile(filename, content) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+  showNotification(`✅ Baixado: ${filename}`, "success", 4000);
 }
 
+// HTTP REQUESTER
 function parseHeadersFromText(raw) {
   const headers = {};
-  String(raw || "")
+  const errors = [];
+  const blockedHeaders = new Set([
+    "content-length",
+    "host",
+    "origin",
+    "referer",
+    "proxy-authorization",
+    "proxy-authenticate",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "sec-fetch-user"
+  ]);
+
+  const lines = String(raw || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .forEach((line) => {
-      const idx = line.indexOf(":");
-      if (idx <= 0) return;
-      const key = line.slice(0, idx).trim();
-      const value = line.slice(idx + 1).trim();
-      if (key) headers[key] = value;
-    });
-  return headers;
+    .filter(Boolean);
+
+  if (lines.length > MAX_HEADER_LINES) {
+    errors.push(`Limite de headers excedido (${MAX_HEADER_LINES}).`);
+    return { headers, errors };
+  }
+
+  for (const line of lines) {
+    const idx = line.indexOf(":");
+    if (idx <= 0) {
+      errors.push(`Header invalido: "${line}". Use o formato Nome: Valor.`);
+      continue;
+    }
+
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    const keyLc = key.toLowerCase();
+
+    if (!key || key.length > MAX_HEADER_KEY_CHARS || !/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(key)) {
+      errors.push(`Nome de header invalido: "${key}".`);
+      continue;
+    }
+    if (blockedHeaders.has(keyLc)) {
+      errors.push(`Header bloqueado por seguranca: "${key}".`);
+      continue;
+    }
+    if (value.length > MAX_HEADER_VALUE_CHARS || /[\0\r\n]/.test(value)) {
+      errors.push(`Valor invalido para header "${key}".`);
+      continue;
+    }
+    headers[key] = value;
+  }
+
+  return { headers, errors };
 }
 
 function redactSensitiveText(value) {
@@ -928,7 +1051,9 @@ function redactSensitiveText(value) {
     .replace(/(authorization\s*:\s*bearer\s+)[\w\-._~+/]+=*/gi, "$1[REDACTED]")
     .replace(/(x-api-key\s*:\s*)[^\r\n]+/gi, "$1[REDACTED]")
     .replace(/(access_token["'\s:=]+)[\w\-._~+/]+=*/gi, "$1[REDACTED]")
-    .replace(/(refresh_token["'\s:=]+)[\w\-._~+/]+=*/gi, "$1[REDACTED]");
+    .replace(/(refresh_token["'\s:=]+)[\w\-._~+/]+=*/gi, "$1[REDACTED]")
+    .replace(/((api_)?secret["'\s:=]+)[^\s,"'}\]]+/gi, "$1[REDACTED]")
+    .replace(/(password["'\s:=]+)[^\s,"'}\]]+/gi, "$1[REDACTED]");
 }
 
 function redactHeaderMap(headersObj) {
@@ -950,16 +1075,65 @@ function truncateForUi(text, max = MAX_RESPONSE_CHARS) {
   return `${value.slice(0, max)}\n\n... [TRUNCADO: ${value.length - max} caracteres removidos]`;
 }
 
+function isPrivateOrLocalHostname(hostname) {
+  const rawHost = String(hostname || "").trim().toLowerCase();
+  const isIpv6Literal = rawHost.startsWith("[") && rawHost.endsWith("]");
+  const host = isIpv6Literal ? rawHost.slice(1, -1) : rawHost;
+  if (!host) return true;
+  if (isIpv6Literal) {
+    // Bloqueia literals IPv6 no requester para reduzir superfície de SSRF/local-net.
+    return true;
+  }
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {
+    return true;
+  }
+  if (host === "::1" || host === "0:0:0:0:0:0:0:1") {
+    return true;
+  }
+  if (host.includes(":")) {
+    if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return true;
+    return false;
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
+    const parts = host.split(".").map((part) => Number(part));
+    if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+    const [a, b] = parts;
+    if (a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 0) return true;
+  }
+  return false;
+}
+
 function parseAndValidateRequestUrl(rawUrl) {
+  const candidate = String(rawUrl || "").trim();
+  if (!candidate) {
+    return { error: "URL invalida." };
+  }
+  if (candidate.length > MAX_URL_CHARS) {
+    return { error: `URL excede o limite de ${MAX_URL_CHARS} caracteres.` };
+  }
+
   let parsed;
   try {
-    parsed = new URL(String(rawUrl || "").trim());
+    parsed = new URL(candidate);
   } catch {
     return { error: "URL invalida." };
   }
 
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    return { error: "Apenas HTTP/HTTPS sao permitidos." };
+  if (parsed.username || parsed.password) {
+    return { error: "Nao envie credenciais na URL. Use headers seguros." };
+  }
+  if (parsed.protocol !== "https:") {
+    return { error: "Apenas HTTPS e permitido em producao." };
+  }
+  if (isPrivateOrLocalHostname(parsed.hostname)) {
+    return { error: "Host local/privado bloqueado por seguranca." };
+  }
+  if (parsed.hash) {
+    parsed.hash = "";
   }
 
   return { url: parsed };
@@ -1095,6 +1269,7 @@ function safeParseBody(method, bodyText) {
   const hasBody = !["GET", "HEAD"].includes(String(method).toUpperCase());
   if (!hasBody || !bodyText || !bodyText.trim()) return undefined;
   const raw = bodyText.trim();
+  if (raw.length > MAX_BODY_CHARS) return "[BODY_TOO_LARGE]";
   try {
     return JSON.stringify(JSON.parse(raw));
   } catch {
@@ -1110,6 +1285,7 @@ async function executeRequest() {
   if (!rawUrl) {
     reqMetaEl.textContent = "Informe a URL da request.";
     reqMetaEl.className = "content req-meta error";
+    showNotification(`⚠️ Informe uma URL para continuar`, "warning", 4000);
     return;
   }
 
@@ -1117,26 +1293,48 @@ async function executeRequest() {
   if (validated.error) {
     reqMetaEl.textContent = validated.error;
     reqMetaEl.className = "content req-meta error";
+    showNotification(`⚠️ URL inválida: ${validated.error}`, "warning", 5000);
     return;
   }
   const urlObj = validated.url;
   const url = urlObj.toString();
 
-  const headers = parseHeadersFromText(reqHeadersEl?.value || "");
+  const parsedHeaders = parseHeadersFromText(reqHeadersEl?.value || "");
+  if (parsedHeaders.errors.length) {
+    reqMetaEl.textContent = parsedHeaders.errors[0];
+    reqMetaEl.className = "content req-meta error";
+    reqResponseHeadersEl.textContent = "-";
+    reqResponseBodyEl.textContent = "-";
+    showNotification(`⚠️ Headers inválidos: ${parsedHeaders.errors[0]}`, "warning", 5000);
+    return;
+  }
+  const headers = parsedHeaders.headers;
   const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization" || k.toLowerCase() === "x-api-key");
   if (hasAuth && urlObj.protocol !== "https:") {
-    reqMetaEl.textContent = "Aviso: credenciais estao sendo enviadas sem HTTPS.";
+    reqMetaEl.textContent = "Credenciais exigem HTTPS.";
     reqMetaEl.className = "content req-meta error";
+    showNotification(`⚠️ Segurança: Use HTTPS com credenciais!`, "warning", 5000);
+    return;
   }
 
   const body = safeParseBody(method, reqBodyEl?.value || "");
+  if (body === "[BODY_TOO_LARGE]") {
+    reqMetaEl.textContent = `Body excede o limite de ${MAX_BODY_CHARS} caracteres.`;
+    reqMetaEl.className = "content req-meta error";
+    showNotification(`⚠️ Body muito grande: limite ${MAX_BODY_CHARS} caracteres`, "warning", 5000);
+    return;
+  }
   const options = { method, headers };
+  options.credentials = "omit";
+  options.referrerPolicy = "no-referrer";
+  options.cache = "no-store";
   if (body !== undefined) options.body = body;
 
   reqMetaEl.textContent = "Executando request...";
   reqMetaEl.className = "content req-meta";
   reqResponseHeadersEl.textContent = "-";
   reqResponseBodyEl.textContent = "-";
+  showNotification(`Enviando ${method} ${urlObj.host}...`, "info", 3000);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -1163,6 +1361,10 @@ async function executeRequest() {
     }
     reqResponseHeadersEl.className = "content";
     reqResponseBodyEl.className = "content";
+
+    const statusType = response.ok ? "success" : response.status >= 500 ? "error" : response.status >= 400 ? "warning" : "info";
+    const statusMsg = response.ok ? `✅ Sucesso: ${response.status} ${response.statusText}` : response.status >= 500 ? `❌ Erro ${response.status}: ${response.statusText}` : response.status >= 400 ? `⚠️ Erdo ${response.status}: ${response.statusText}` : `ℹ️ ${response.status} ${response.statusText}`;
+    showNotification(`${statusMsg} - ${elapsed}ms`, statusType, 5000);
   } catch (error) {
     clearTimeout(timeoutId);
     reqMetaEl.textContent = "Falha na request (rede/CORS/URL).";
@@ -1171,6 +1373,7 @@ async function executeRequest() {
     reqResponseBodyEl.textContent = redactSensitiveText(String(error?.message || error || "Erro desconhecido"));
     reqResponseHeadersEl.className = "content empty";
     reqResponseBodyEl.className = "content";
+    showNotification(`❌ Erro de rede: ${error?.message || "Falha na request"}`, "error", 6000);
   }
 }
 
@@ -1225,6 +1428,7 @@ function highlightXml(xmlText) {
   );
 }
 
+// FORMATTERS
 function setFormatterOutput(el, text, isError = false, syntax = "plain") {
   if (!el) return;
   const value = text || "-";
@@ -1245,21 +1449,26 @@ function formatJson(mode = "pretty") {
   const raw = jsonInputEl.value.trim();
   if (!raw) {
     setFormatterOutput(jsonOutputEl, "Informe JSON no input.", true);
+    showNotification("⚠️ Informe um JSON para formatar", "warning", 4000);
     return;
   }
   try {
     const parsed = JSON.parse(raw);
     if (mode === "minify") {
       setFormatterOutput(jsonOutputEl, JSON.stringify(parsed), false, "json");
+      showNotification("✅ JSON minificado com sucesso", "success", 3000);
       return;
     }
     if (mode === "validate") {
       setFormatterOutput(jsonOutputEl, "JSON valido.");
+      showNotification("✅ JSON válido", "success", 3000);
       return;
     }
     setFormatterOutput(jsonOutputEl, JSON.stringify(parsed, null, 2), false, "json");
+    showNotification("✅ JSON formatado com sucesso", "success", 3000);
   } catch (error) {
     setFormatterOutput(jsonOutputEl, `JSON invalido: ${error.message}`, true);
+    showNotification(`❌ JSON inválido: ${error.message}`, "error", 5000);
   }
 }
 
@@ -1327,30 +1536,36 @@ function formatXml(mode = "pretty") {
   const raw = xmlInputEl.value.trim();
   if (!raw) {
     setFormatterOutput(xmlOutputEl, "Informe XML no input.", true);
+    showNotification("⚠️ Informe um XML para formatar", "warning", 4000);
     return;
   }
   const parser = new DOMParser();
   const doc = parser.parseFromString(raw, "application/xml");
   if (doc.querySelector("parsererror")) {
     setFormatterOutput(xmlOutputEl, "XML invalido. Verifique fechamento de tags.", true);
+    showNotification("❌ XML inválido: verifique as tags", "error", 5000);
     return;
   }
   const root = doc.documentElement;
   const serialized = new XMLSerializer().serializeToString(root);
   if (mode === "validate") {
     setFormatterOutput(xmlOutputEl, "XML valido.");
+    showNotification("✅ XML válido", "success", 3000);
     return;
   }
   if (mode === "minify") {
     setFormatterOutput(xmlOutputEl, serialized.replace(/>\s+</g, "><").trim(), false, "xml");
+    showNotification("✅ XML minificado com sucesso", "success", 3000);
     return;
   }
   setFormatterOutput(xmlOutputEl, formatXmlNode(root, 0, "  "), false, "xml");
+  showNotification("✅ XML formatado com sucesso", "success", 3000);
 }
 
 function copyFormatterOutput(el) {
   if (!el) return;
   copyToClipboard(el.textContent || "");
+  showNotification("✅ Conteúdo copiado para área de transferência", "success", 3000);
 }
 
 function renderResult(result) {
@@ -1371,6 +1586,7 @@ function renderResult(result) {
   lastAnalysis = result;
   saveHistoryItem(result);
   renderSummary(result);
+  renderTimeline(result);
   renderOrderedFrames(result);
   renderExplorer(result, explorerSearchInput?.value || "");
   renderHistory();
@@ -1378,8 +1594,10 @@ function renderResult(result) {
   normalizedEl.className = "content";
   if (exportBtn) exportBtn.disabled = false;
   if (ticketBtn) ticketBtn.disabled = false;
+  showNotification(`Análise concluída! ${result.frames.length} frames extraídos.`, "success", 4000);
 }
 
+// CORE
 function runAnalysis() {
   const forcedLanguage = languageModeSelect?.value || "auto";
   renderResult(analyzeTrace(traceInput.value, forcedLanguage));
@@ -1398,6 +1616,7 @@ function initTheme() {
   setTheme(saved === "light" ? "light" : "dark");
 }
 
+// EVENT LISTENERS
 analyzeBtn.addEventListener("click", () => runAnalysis());
 
 sampleBtn.addEventListener("click", () => {
@@ -1564,6 +1783,7 @@ orderedFramesEl.addEventListener("click", (event) => {
   const frame = lastAnalysis.orderedFrames.find((item) => item.index === frameIndex);
   const value = getFrameCopyValue(frame, copyKind);
   copyToClipboard(value);
+  showNotification(`Copiado: ${value}`, "success", 2000);
 
   const oldText = button.textContent;
   button.textContent = "Copiado";

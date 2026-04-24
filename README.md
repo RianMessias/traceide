@@ -17,6 +17,14 @@ App web local para acelerar leitura de stack trace durante debug.
 - Stack trace normalizado (remove linhas duplicadas).
 - Lista de ações sugeridas com base no erro.
 
+## Validacao de seguranca
+
+Execute a suite de seguranca antes de publicar:
+
+```bash
+node --test tests/security.test.mjs
+```
+
 ## Próximos passos sugeridos
 
 - Upload de arquivo `.log` e arrastar/soltar.
